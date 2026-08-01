@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+
 <html>
 <head>
   <meta charset="UTF-8" />
@@ -6,6 +7,7 @@
   <title>Family Tracker Pro</title>
 
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -72,6 +74,7 @@
     .online{color:#16a34a;font-weight:bold;}
     .offline{color:#dc2626;font-weight:bold;}
   </style>
+
 </head>
 <body>
 
@@ -84,8 +87,8 @@
     <option value="">Loading...</option>
   </select>
 
-  <button onclick="showAllUsers()">Show All</button>
-  <button onclick="toggleDarkMode()">Dark Mode</button>
+<button onclick="showAllUsers()">Show All</button> <button id="followBtn" onclick="toggleFollow()">Unpin / Stop Following</button> <button onclick="toggleDarkMode()">Dark Mode</button>
+
 </div>
 
 <div id="map"></div>
@@ -139,6 +142,21 @@ L.control.layers(
   {}
 ).addTo(map);
 
+// Follow / Pin behavior
+let followMode = true;
+let followZoom = 16;
+
+map.on("zoomend", () => {
+  followZoom = map.getZoom();
+});
+
+map.on("dragstart", () => {
+  if (followMode) {
+    followMode = false;
+    document.getElementById("followBtn").innerText = "Pin / Follow";
+  }
+});
+
 const colors=["red","blue","green","orange","purple","black"];
 
 function coloredIcon(color){
@@ -157,6 +175,10 @@ let currentRef=null;
 let currentData=null;
 let userLocation=null;
 
+if(localStorage.getItem("darkMode")==="true"){
+  document.body.classList.add("dark");
+}
+
 if(navigator.geolocation){
   navigator.geolocation.getCurrentPosition(p=>{
     userLocation=[p.coords.latitude,p.coords.longitude];
@@ -167,7 +189,7 @@ db.ref("users").on("value",snap=>{
   const users=snap.val()||{};
   const select=document.getElementById("userSelect");
 
-  const currentValue=select.value;
+  const previous=select.value;
 
   select.innerHTML="";
 
@@ -178,11 +200,20 @@ db.ref("users").on("value",snap=>{
     select.appendChild(opt);
   }
 
-  if(currentValue && users[currentValue]){
-    select.value=currentValue;
+  if(previous && users[previous]){
+    select.value=previous;
+  }else if(select.options.length>0){
+    select.selectedIndex=0;
   }
 
   updateAllMarkers(users);
+
+  if(select.options.length>0){
+    startTracking();
+  }else{
+    document.getElementById("personTitle").innerText="No user selected";
+    document.getElementById("statusText").innerText="--";
+  }
 });
 
 function updateAllMarkers(users){
@@ -197,6 +228,7 @@ function updateAllMarkers(users){
 
   for(const name in users){
     const d=users[name];
+
     if(!markers[name]){
       markers[name]=L.marker([d.lat,d.lng],{
         icon:coloredIcon(colors[i%colors.length])
@@ -204,32 +236,33 @@ function updateAllMarkers(users){
     }else{
       markers[name].setLatLng([d.lat,d.lng]);
     }
+
     i++;
   }
 }
 
 function showAllUsers(){
-  db.ref("users").once("value",snap=>{
-    const users=snap.val()||{};
-    const bounds=[];
+  const bounds=[];
 
-    for(const name in users){
-      bounds.push([users[name].lat,users[name].lng]);
-    }
+  for(const name in markers){
+    bounds.push(markers[name].getLatLng());
+  }
 
-    if(bounds.length){
-      map.fitBounds(bounds,{padding:[50,50]});
-    }
-  });
+  if(bounds.length){
+    map.fitBounds(bounds,{padding:[50,50]});
+  }
 }
 
 function startTracking(){
   const name=document.getElementById("userSelect").value;
+
   if(!name)return;
 
   document.getElementById("personTitle").innerText=name;
 
-  if(currentRef)currentRef.off();
+  if(currentRef){
+    currentRef.off();
+  }
 
   currentRef=db.ref("users/"+name);
 
@@ -247,7 +280,12 @@ function startTracking(){
       markers[name].setLatLng([data.lat,data.lng]);
     }
 
-    map.setView([data.lat,data.lng],16);
+    if(followMode){
+      map.setView([data.lat,data.lng], followZoom, {
+        animate:true,
+        duration:0.6
+      });
+    }
 
     updateInfo(data);
   });
@@ -257,11 +295,10 @@ function updateInfo(data){
   const now=Date.now();
   const diff=Math.floor((now-data.time)/1000);
 
-  if(diff<=30){
-    document.getElementById("statusText").innerHTML="<span class='online'>Online</span>";
-  }else{
-    document.getElementById("statusText").innerHTML="<span class='offline'>Offline</span>";
-  }
+  document.getElementById("statusText").innerHTML=
+    diff<=30
+      ? "<span class='online'>Online</span>"
+      : "<span class='offline'>Offline</span>";
 
   document.getElementById("updatedText").innerText=diff+" sec ago";
 
@@ -295,7 +332,9 @@ function updateInfo(data){
 }
 
 setInterval(()=>{
-  if(currentData)updateInfo(currentData);
+  if(currentData){
+    updateInfo(currentData);
+  }
 },1000);
 
 function haversine(lat1,lon1,lat2,lon2){
@@ -317,12 +356,36 @@ function filterUsers(){
   const select=document.getElementById("userSelect");
 
   Array.from(select.options).forEach(o=>{
-    o.style.display=o.text.toLowerCase().includes(q)?"":"none";
+    o.style.display=
+      o.text.toLowerCase().includes(q)?"":"none";
   });
+}
+
+function toggleFollow(){
+  followMode = !followMode;
+
+  const btn = document.getElementById("followBtn");
+
+  if(followMode){
+    btn.innerText = "Unpin / Stop Following";
+
+    if(currentData){
+      map.setView([currentData.lat, currentData.lng], followZoom, {
+        animate:true,
+        duration:0.8
+      });
+    }
+  }else{
+    btn.innerText = "Pin / Follow";
+  }
 }
 
 function toggleDarkMode(){
   document.body.classList.toggle("dark");
+  localStorage.setItem(
+    "darkMode",
+    document.body.classList.contains("dark")
+  );
 }
 </script>
 
