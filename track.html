@@ -93,6 +93,10 @@
 
 <div id="map"></div>
 
+<div id="sosPopup" style="display:none;position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#dc2626;color:white;padding:18px 22px;border-radius:12px;font-size:18px;font-weight:bold;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,.3);">
+  EMERGENCY SOS
+</div>
+
 <div class="panel">
   <h3 id="personTitle">No user selected</h3>
 
@@ -102,6 +106,15 @@
   <div class="stat">Updated: <span id="updatedText">--</span></div>
   <div class="stat">Distance from you: <span id="distanceText">--</span></div>
   <div class="stat">ETA: <span id="etaText">--</span></div>
+</div>
+
+<div class="panel" style="margin-top:10px;">
+  <h3>Family Messages</h3>
+  <div id="messages" style="height:160px;overflow:auto;border:1px solid #ccc;padding:10px;border-radius:8px;background:#fafafa;"></div>
+  <div style="display:flex;gap:8px;margin-top:10px;">
+    <input id="messageInput" placeholder="Type a message..." style="flex:1;">
+    <button onclick="sendMessage()">Send</button>
+  </div>
 </div>
 
 <script>
@@ -174,6 +187,7 @@ let markers={};
 let currentRef=null;
 let currentData=null;
 let userLocation=null;
+let currentTrackedUser="";
 
 if(localStorage.getItem("darkMode")==="true"){
   document.body.classList.add("dark");
@@ -259,6 +273,9 @@ function startTracking(){
   if(!name)return;
 
   document.getElementById("personTitle").innerText=name;
+  currentTrackedUser = name;
+  listenForSOS(name);
+  listenForMessages(name);
 
   if(currentRef){
     currentRef.off();
@@ -378,6 +395,69 @@ function toggleFollow(){
   }else{
     btn.innerText = "Pin / Follow";
   }
+}
+
+
+
+function listenForSOS(name){
+  db.ref("sos/"+name).on("value", snap => {
+    const data = snap.val();
+    if(!data || !data.active) return;
+
+    const popup = document.getElementById("sosPopup");
+    popup.innerText = "EMERGENCY: " + name + " pressed SOS!";
+    popup.style.display = "block";
+
+    if(markers[name]){
+      const pos = markers[name].getLatLng();
+      map.setView(pos, 17, {animate:true, duration:1});
+    }
+
+    try{
+      const audio = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audio.createOscillator();
+      const gain = audio.createGain();
+      osc.type = "square";
+      osc.frequency.value = 880;
+      osc.connect(gain);
+      gain.connect(audio.destination);
+      osc.start();
+      gain.gain.setValueAtTime(0.2, audio.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.8);
+      osc.stop(audio.currentTime + 0.8);
+    }catch(e){}
+
+    setTimeout(()=>{
+      popup.style.display = "none";
+      db.ref("sos/"+name).remove();
+    }, 8000);
+  });
+}
+
+function sendMessage(){
+  if(!currentTrackedUser) return;
+  const text = document.getElementById("messageInput").value.trim();
+  if(!text) return;
+  db.ref("messages/"+currentTrackedUser).push({
+    from:"Family",
+    text:text,
+    time:Date.now()
+  });
+  document.getElementById("messageInput").value="";
+}
+
+function listenForMessages(name){
+  const box = document.getElementById("messages");
+  box.innerHTML = "";
+  db.ref("messages/"+name).off();
+  db.ref("messages/"+name).on("child_added", snap => {
+    const m = snap.val();
+    const div = document.createElement("div");
+    div.style.padding = "6px 0";
+    div.innerHTML = "<b>" + (m.from || "Unknown") + ":</b> " + m.text;
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+  });
 }
 
 function toggleDarkMode(){
