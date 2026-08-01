@@ -40,6 +40,11 @@
       border: none;
       border-radius: 8px;
       cursor: pointer;
+      margin: 5px;
+    }
+
+    .stop {
+      background: #d32f2f;
     }
 
     #status {
@@ -57,6 +62,7 @@
   <input type="text" id="name" placeholder="Enter your name (Ishaan, Dad, Mom)">
 
   <button onclick="startSharing()">Start Sharing</button>
+  <button class="stop" onclick="stopSharing()">Stop Sharing</button>
 
   <div id="status"></div>
 </div>
@@ -75,6 +81,9 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
+let watchId = null;
+let currentUser = "";
+
 function startSharing() {
   const name = document.getElementById("name").value.trim();
 
@@ -83,9 +92,16 @@ function startSharing() {
     return;
   }
 
+  currentUser = name;
+
+  // Prevent multiple watchers
+  if (watchId !== null) {
+    navigator.geolocation.clearWatch(watchId);
+  }
+
   document.getElementById("status").innerText = "Requesting location permission...";
 
-  navigator.geolocation.watchPosition(
+  watchId = navigator.geolocation.watchPosition(
     (pos) => {
       db.ref("users/" + name).set({
         lat: pos.coords.latitude,
@@ -106,6 +122,20 @@ function startSharing() {
       timeout: 5000
     }
   );
+}
+
+function stopSharing() {
+  if (watchId !== null) {
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+  }
+
+  if (currentUser !== "") {
+    db.ref("users/" + currentUser).remove();
+  }
+
+  document.getElementById("status").innerText =
+    "Location sharing stopped.";
 }
 </script>
 
