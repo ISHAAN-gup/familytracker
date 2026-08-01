@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Track Family Location</title>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      background: #f2f2f2;
+    }
+
+    .top {
+      padding: 15px;
+      background: white;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    select {
+      padding: 10px;
+      font-size: 16px;
+    }
+
+    #map {
+      height: calc(100vh - 70px);
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+
+<div class="top">
+  <strong>Select person to track:</strong>
+  <select id="userSelect" onchange="startTracking()">
+    <option value="">Loading users...</option>
+  </select>
+</div>
+
+<div id="map"></div>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyBEPmpn9UCgLknRnMnPRPaLLQpYgCPgqME",
+  authDomain: "familytracker01-b1b1a.firebaseapp.com",
+  databaseURL: "https://familytracker01-b1b1a-default-rtdb.firebaseio.com",
+  projectId: "familytracker01-b1b1a",
+  storageBucket: "familytracker01-b1b1a.firebasestorage.app",
+  messagingSenderId: "87073205371",
+  appId: "1:87073205371:web:b1cba078d73e843afac6de"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+const map = L.map("map").setView([20, 78], 5);
+
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution: "&copy; OpenStreetMap contributors"
+}).addTo(map);
+
+const marker = L.marker([20, 78]).addTo(map);
+
+let currentRef = null;
+
+db.ref("users").on("value", (snapshot) => {
+  const users = snapshot.val() || {};
+  const select = document.getElementById("userSelect");
+
+  select.innerHTML = "";
+
+  for (const name in users) {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = name;
+    select.appendChild(option);
+  }
+
+  if (select.options.length > 0) {
+    startTracking();
+  }
+});
+
+function startTracking() {
+  const name = document.getElementById("userSelect").value;
+
+  if (!name) return;
+
+  if (currentRef) {
+    currentRef.off();
+  }
+
+  currentRef = db.ref("users/" + name);
+
+  currentRef.on("value", (snapshot) => {
+    const data = snapshot.val();
+    if (!data) return;
+
+    marker.setLatLng([data.lat, data.lng]);
+    map.setView([data.lat, data.lng], 17);
+  });
+}
+</script>
+
+</body>
+</html>

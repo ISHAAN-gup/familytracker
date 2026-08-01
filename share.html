@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Share My Live Location</title>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background: #f2f2f2;
+      padding: 40px;
+    }
+
+    .box {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      max-width: 400px;
+      margin: auto;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+
+    input {
+      width: 90%;
+      padding: 12px;
+      font-size: 16px;
+      margin: 10px 0;
+    }
+
+    button {
+      padding: 12px 20px;
+      font-size: 16px;
+      background: #4285F4;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    #status {
+      margin-top: 20px;
+      color: green;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+<div class="box">
+  <h2>Share Live Location</h2>
+
+  <input type="text" id="name" placeholder="Enter your name (Ishaan, Dad, Mom)">
+
+  <button onclick="startSharing()">Start Sharing</button>
+
+  <div id="status"></div>
+</div>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyBEPmpn9UCgLknRnMnPRPaLLQpYgCPgqME",
+  authDomain: "familytracker01-b1b1a.firebaseapp.com",
+  databaseURL: "https://familytracker01-b1b1a-default-rtdb.firebaseio.com",
+  projectId: "familytracker01-b1b1a",
+  storageBucket: "familytracker01-b1b1a.firebasestorage.app",
+  messagingSenderId: "87073205371",
+  appId: "1:87073205371:web:b1cba078d73e843afac6de"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+function startSharing() {
+  const name = document.getElementById("name").value.trim();
+
+  if (name === "") {
+    alert("Please enter your name");
+    return;
+  }
+
+  document.getElementById("status").innerText = "Requesting location permission...";
+
+  navigator.geolocation.watchPosition(
+    (pos) => {
+      db.ref("users/" + name).set({
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        time: Date.now()
+      });
+
+      document.getElementById("status").innerText =
+        "Live location is being shared as: " + name;
+    },
+    (err) => {
+      document.getElementById("status").innerText =
+        "Location error: " + err.message;
+    },
+    {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 5000
+    }
+  );
+}
+</script>
+
+</body>
+</html>
