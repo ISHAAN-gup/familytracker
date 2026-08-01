@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Track Family Location</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Family Tracker Pro</title>
 
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
@@ -12,100 +12,317 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 0;
-      background: #f2f2f2;
+    body{
+      margin:0;
+      font-family:Arial,Helvetica,sans-serif;
+      background:#f4f4f4;
+      color:#111;
+      transition:background .25s,color .25s;
     }
 
-    .top {
-      padding: 15px;
-      background: white;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    body.dark{
+      background:#121212;
+      color:#f1f1f1;
     }
 
-    select {
-      padding: 10px;
-      font-size: 16px;
+    .top{
+      padding:12px;
+      background:#fff;
+      box-shadow:0 2px 8px rgba(0,0,0,.12);
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      align-items:center;
     }
 
-    #map {
-      height: calc(100vh - 70px);
-      width: 100%;
+    body.dark .top{
+      background:#1f1f1f;
     }
+
+    select,input,button{
+      padding:10px;
+      border-radius:8px;
+      border:1px solid #ccc;
+      font-size:14px;
+    }
+
+    button{
+      cursor:pointer;
+    }
+
+    #map{
+      height:60vh;
+      width:100%;
+    }
+
+    .panel{
+      background:#fff;
+      padding:15px;
+    }
+
+    body.dark .panel{
+      background:#1b1b1b;
+    }
+
+    .stat{
+      margin:8px 0;
+      font-size:15px;
+    }
+
+    .online{color:#16a34a;font-weight:bold;}
+    .offline{color:#dc2626;font-weight:bold;}
   </style>
 </head>
 <body>
 
 <div class="top">
-  <strong>Select person to track:</strong>
+  <strong>Track:</strong>
+
+  <input id="search" placeholder="Search user" oninput="filterUsers()">
+
   <select id="userSelect" onchange="startTracking()">
-    <option value="">Loading users...</option>
+    <option value="">Loading...</option>
   </select>
+
+  <button onclick="showAllUsers()">Show All</button>
+  <button onclick="toggleDarkMode()">Dark Mode</button>
 </div>
 
 <div id="map"></div>
 
+<div class="panel">
+  <h3 id="personTitle">No user selected</h3>
+
+  <div class="stat">Status: <span id="statusText">--</span></div>
+  <div class="stat">Speed: <span id="speedText">--</span></div>
+  <div class="stat">Movement: <span id="movementText">--</span></div>
+  <div class="stat">Updated: <span id="updatedText">--</span></div>
+  <div class="stat">Distance from you: <span id="distanceText">--</span></div>
+  <div class="stat">ETA: <span id="etaText">--</span></div>
+</div>
+
 <script>
-const firebaseConfig = {
-  apiKey: "AIzaSyBEPmpn9UCgLknRnMnPRPaLLQpYgCPgqME",
-  authDomain: "familytracker01-b1b1a.firebaseapp.com",
-  databaseURL: "https://familytracker01-b1b1a-default-rtdb.firebaseio.com",
-  projectId: "familytracker01-b1b1a",
-  storageBucket: "familytracker01-b1b1a.firebasestorage.app",
-  messagingSenderId: "87073205371",
-  appId: "1:87073205371:web:b1cba078d73e843afac6de"
+const firebaseConfig={
+  apiKey:"AIzaSyBEPmpn9UCgLknRnMnPRPaLLQpYgCPgqME",
+  authDomain:"familytracker01-b1b1a.firebaseapp.com",
+  databaseURL:"https://familytracker01-b1b1a-default-rtdb.firebaseio.com",
+  projectId:"familytracker01-b1b1a",
+  storageBucket:"familytracker01-b1b1a.firebasestorage.app",
+  messagingSenderId:"87073205371",
+  appId:"1:87073205371:web:b1cba078d73e843afac6de"
 };
 
 firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
+const db=firebase.database();
 
-const map = L.map("map").setView([20, 78], 5);
+const map=L.map("map").setView([20,78],5);
 
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  attribution: "&copy; OpenStreetMap contributors"
-}).addTo(map);
+const normal=L.tileLayer(
+  "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+  {attribution:"&copy; OpenStreetMap contributors"}
+);
 
-const marker = L.marker([20, 78]).addTo(map);
+const satellite=L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  {attribution:"Tiles &copy; Esri"}
+);
 
-let currentRef = null;
+const terrain=L.tileLayer(
+  "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+  {attribution:"&copy; OpenTopoMap"}
+);
 
-db.ref("users").on("value", (snapshot) => {
-  const users = snapshot.val() || {};
-  const select = document.getElementById("userSelect");
+normal.addTo(map);
 
-  select.innerHTML = "";
+L.control.layers(
+  {"Current":normal,"Satellite":satellite,"Terrain":terrain},
+  {}
+).addTo(map);
 
-  for (const name in users) {
-    const option = document.createElement("option");
-    option.value = name;
-    option.textContent = name;
-    select.appendChild(option);
+const colors=["red","blue","green","orange","purple","black"];
+
+function coloredIcon(color){
+  return new L.Icon({
+    iconUrl:`https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-${color}.png`,
+    shadowUrl:"https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
+    iconSize:[25,41],
+    iconAnchor:[12,41],
+    popupAnchor:[1,-34],
+    shadowSize:[41,41]
+  });
+}
+
+let markers={};
+let currentRef=null;
+let currentData=null;
+let userLocation=null;
+
+if(navigator.geolocation){
+  navigator.geolocation.getCurrentPosition(p=>{
+    userLocation=[p.coords.latitude,p.coords.longitude];
+  });
+}
+
+db.ref("users").on("value",snap=>{
+  const users=snap.val()||{};
+  const select=document.getElementById("userSelect");
+
+  const currentValue=select.value;
+
+  select.innerHTML="";
+
+  for(const name in users){
+    const opt=document.createElement("option");
+    opt.value=name;
+    opt.textContent=name;
+    select.appendChild(opt);
   }
 
-  if (select.options.length > 0) {
-    startTracking();
+  if(currentValue && users[currentValue]){
+    select.value=currentValue;
   }
+
+  updateAllMarkers(users);
 });
 
-function startTracking() {
-  const name = document.getElementById("userSelect").value;
-
-  if (!name) return;
-
-  if (currentRef) {
-    currentRef.off();
+function updateAllMarkers(users){
+  for(const key in markers){
+    if(!users[key]){
+      map.removeLayer(markers[key]);
+      delete markers[key];
+    }
   }
 
-  currentRef = db.ref("users/" + name);
+  let i=0;
 
-  currentRef.on("value", (snapshot) => {
-    const data = snapshot.val();
-    if (!data) return;
+  for(const name in users){
+    const d=users[name];
+    if(!markers[name]){
+      markers[name]=L.marker([d.lat,d.lng],{
+        icon:coloredIcon(colors[i%colors.length])
+      }).addTo(map).bindPopup(name);
+    }else{
+      markers[name].setLatLng([d.lat,d.lng]);
+    }
+    i++;
+  }
+}
 
-    marker.setLatLng([data.lat, data.lng]);
-    map.setView([data.lat, data.lng], 17);
+function showAllUsers(){
+  db.ref("users").once("value",snap=>{
+    const users=snap.val()||{};
+    const bounds=[];
+
+    for(const name in users){
+      bounds.push([users[name].lat,users[name].lng]);
+    }
+
+    if(bounds.length){
+      map.fitBounds(bounds,{padding:[50,50]});
+    }
   });
+}
+
+function startTracking(){
+  const name=document.getElementById("userSelect").value;
+  if(!name)return;
+
+  document.getElementById("personTitle").innerText=name;
+
+  if(currentRef)currentRef.off();
+
+  currentRef=db.ref("users/"+name);
+
+  currentRef.on("value",snap=>{
+    const data=snap.val();
+
+    if(!data){
+      document.getElementById("statusText").innerHTML="<span class='offline'>Offline</span>";
+      return;
+    }
+
+    currentData=data;
+
+    if(markers[name]){
+      markers[name].setLatLng([data.lat,data.lng]);
+    }
+
+    map.setView([data.lat,data.lng],16);
+
+    updateInfo(data);
+  });
+}
+
+function updateInfo(data){
+  const now=Date.now();
+  const diff=Math.floor((now-data.time)/1000);
+
+  if(diff<=30){
+    document.getElementById("statusText").innerHTML="<span class='online'>Online</span>";
+  }else{
+    document.getElementById("statusText").innerHTML="<span class='offline'>Offline</span>";
+  }
+
+  document.getElementById("updatedText").innerText=diff+" sec ago";
+
+  const speed=data.speed||0;
+  document.getElementById("speedText").innerText=speed.toFixed(1)+" km/h";
+
+  document.getElementById("movementText").innerText=
+    speed>1?"Moving":"Stopped";
+
+  if(userLocation){
+    const d=haversine(
+      userLocation[0],userLocation[1],
+      data.lat,data.lng
+    );
+
+    document.getElementById("distanceText").innerText=
+      d.toFixed(2)+" km";
+
+    if(speed>1){
+      const eta=(d/speed)*60;
+      document.getElementById("etaText").innerText=
+        eta.toFixed(0)+" min";
+    }else{
+      document.getElementById("etaText").innerText="--";
+    }
+  }else{
+    document.getElementById("distanceText").innerText=
+      "Allow location permission";
+    document.getElementById("etaText").innerText="--";
+  }
+}
+
+setInterval(()=>{
+  if(currentData)updateInfo(currentData);
+},1000);
+
+function haversine(lat1,lon1,lat2,lon2){
+  const R=6371;
+  const dLat=(lat2-lat1)*Math.PI/180;
+  const dLon=(lon2-lon1)*Math.PI/180;
+
+  const a=
+    Math.sin(dLat/2)**2+
+    Math.cos(lat1*Math.PI/180)*
+    Math.cos(lat2*Math.PI/180)*
+    Math.sin(dLon/2)**2;
+
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+function filterUsers(){
+  const q=document.getElementById("search").value.toLowerCase();
+  const select=document.getElementById("userSelect");
+
+  Array.from(select.options).forEach(o=>{
+    o.style.display=o.text.toLowerCase().includes(q)?"":"none";
+  });
+}
+
+function toggleDarkMode(){
+  document.body.classList.toggle("dark");
 }
 </script>
 
